@@ -1,5 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
+#include <string>
 #include <unistd.h>
 #include <windows.h>
 #include "MessageRAII.hpp"
@@ -12,57 +14,22 @@ namespace task
 
 int main(int argc, char** argv)
 {
-  if (argc != 2)
+  if (argc < 2)
   {
-    fprintf(stderr, "child: incorrect args\n");
-    return 1;
-  }
-  int err = 0;
-  int rd = std::atoi(argv[1]);
-  if (rd <= 0)
-  {
-    fprintf(stderr, "child: incorrect rd\n");
-    return 1;
+    std::cerr << "child: the argument is not specified" << '\n';
   }
 
-  ssize_t recvErr = 0;
-  size_t len = 0;
-  task::recvSize(recvErr, rd, len);
-  if (recvErr <= 0)
+  HANDLE rd{reinterpret_cast< HANDLE >(std::stoull(argv[1]))};
+  char msg[256] = {};
+  DWORD err = 0, k = 255;
+  if (task::recv(err, rd, msg, k) != k)
   {
-    perror("child: recvSize error");
+    std::cerr << err << '\n';
+    CloseHandle(rd);
     return 1;
   }
-
-  task::MessageRAII msgRAII{};
-  msgRAII.line = static_cast< char* >(malloc((len + 1) * sizeof(char)));
-  if (!msgRAII.line)
-  {
-    perror("child: memory allocation error");
-    return 1;
-  }
-
-  task::recv(recvErr, rd, msgRAII.line, static_cast< ssize_t >(len));
-  if (recvErr <= 0)
-  {
-    perror("child: recv error");
-    return 1;
-  }
-
-  msgRAII.line[len] = '\0';
-
-  err = close(rd);
-  if (err)
-  {
-    perror("child: rd close error");
-    return err;
-  }
-  err = printf("%s", msgRAII.line);
-  if (err < 0)
-  {
-    perror("child: printf error");
-    return 1;
-  }
+  CloseHandle(rd);
+  printf("%s", msg);
 }
 
 DWORD recv(DWORD& err, HANDLE rd, char* b, DWORD k)

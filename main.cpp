@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <unistd.h>
 #include <windows.h>
 #include "MessageRAII.hpp"
@@ -11,96 +12,35 @@ namespace task
   ssize_t myGetline(char** lineptr, size_t* n); // на винде нету сишного getline'а :D
 }
 
-int main()
+int main(int argc, char** argv)
 {
-  task::MessageRAII msgRAII{};
-  size_t cap = 0;
-
-  ssize_t len = task::myGetline(&msgRAII.line, &cap);
-
-  if (len == -1)
+  if (argc < 2)
   {
-    if (ferror(stdin))
-    {
-      perror("main: getline error");
-      return 1;
-    }
-    return 0;
+    std::cerr << "main: the argument is not specified" << '\n';
   }
-
-  int pps[2] = {}, err = pipe(pps);
-  if (err)
+  HANDLE read, write;
+  SECURITY_ATTRIBUTES sa{};
+  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+  sa.lpSecurityDescriptor = NULL;
+  sa.bInheritHandle = FALSE;
+  if (!CreatePipe(&read, &write, &sa, 256))
   {
-    perror("main: pipe error");
-    return err;
-  }
-
-  int rd = pps[0], wr = pps[1];
-
-  pid_t pid = fork();
-
-  if (pid == -1)
-  {
-    perror("main: fork error");
+    std::cerr << GetLastError() << std::endl;
     return 1;
   }
-  if (!pid)
+  SetHandleInformation(read, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+  PROCESS_INFORMATION pi = {};
+  STARTUPINFOA si{};
+  si.cb = sizeof(si);
+  std::string cmd = std::string(argv[1]) + ' ' + std::to_string(reinterpret_cast< DWORD_PTR >(read));
+  if (!CreateProcessA(argv[1], cmd.data(), NULL, NULL, TRUE, NORMAL_PRIORITY_CLASS, NULL, NULL, &si, &pi))
   {
-    err = close(wr);
-    if (err)
-    {
-      perror("fork: wr close error");
-      return err;
-    }
-
-    char p[100] = {};
-    err = sprintf(p, "%d", rd);
-    if (err <= 0)
-    {
-      perror("fork: sprintf error");
-      return 1;
-    }
-
-    execl("child", "child", p, NULL);
-    perror("fork: execl error");
+    CloseHandle(read);
+    CloseHandle(write);
+    std::cerr << GetLastError() << std::endl;
     return 1;
   }
-
-  err = close(rd);
-  if (err)
-  {
-    perror("main: rd close error");
-    return err;
-  }
-
-  ssize_t sendErr = 0;
-  task::sendSize(sendErr, wr, static_cast< size_t >(len));
-  if (sendErr <= 0)
-  {
-    perror("main: sendSize error");
-    return 1;
-  }
-
-  task::send(sendErr, wr, msgRAII.line, len);
-  if (sendErr <= 0)
-  {
-    perror("main: send error");
-    return 1;
-  }
-
-  err = close(wr);
-  if (err)
-  {
-    perror("main: wr close error");
-    return err;
-  }
-
-  err = waitpid(pid, 0, 0);
-  if (err != pid)
-  {
-    perror("main: waitpid error");
-    return err;
-  }
+  CloseHandle(read);
 }
 
 DWORD send(DWORD& err, HANDLE wr, const char* b, DWORD k)
