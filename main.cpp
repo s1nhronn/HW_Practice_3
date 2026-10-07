@@ -1,13 +1,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
-#include <sys/wait.h>
+#include <windows.h>
 #include "MessageRAII.hpp"
 
 namespace task
 {
-  ssize_t send(ssize_t& err, int wr, const char* b, ssize_t k);
-  ssize_t sendSize(ssize_t& err, int wr, size_t sz);
+  DWORD send(DWORD& err, HANDLE wr, const char* b, DWORD k);
+  DWORD sendSize(DWORD& err, HANDLE wr, size_t sz);
+  ssize_t myGetline(char** lineptr, size_t* n); // на винде нету сишного getline'а :D
 }
 
 int main()
@@ -15,7 +16,7 @@ int main()
   task::MessageRAII msgRAII{};
   size_t cap = 0;
 
-  ssize_t len = getline(&msgRAII.line, &cap, stdin);
+  ssize_t len = task::myGetline(&msgRAII.line, &cap);
 
   if (len == -1)
   {
@@ -102,22 +103,73 @@ int main()
   }
 }
 
-ssize_t task::send(ssize_t& err, int wr, const char* b, ssize_t k)
+DWORD send(DWORD& err, HANDLE wr, const char* b, DWORD k)
 {
-  ssize_t r = 0;
+  DWORD r = 0;
+  WINBOOL st = true;
+  DWORD h = 0;
   while (r < k)
   {
-    err = write(wr, b + r, static_cast< size_t >(k - r));
-    if (err <= 0)
+    st = WriteFile(wr, b + r, k - r, &h, NULL);
+    if (!st)
     {
+      err = GetLastError();
       break;
     }
-    r += err;
+    r += h;
   }
   return r;
 }
 
-ssize_t task::sendSize(ssize_t& err, int wr, size_t sz)
+DWORD sendSize(DWORD& err, HANDLE wr, size_t sz)
 {
-  return send(err, wr, reinterpret_cast< const char* >(&sz), sizeof(size_t));
+  return send(err, wr, reinterpret_cast< const char* >(&sz), sizeof(sz));
+}
+
+ssize_t myGetline(char** lineptr, size_t* n)
+{
+  if (!lineptr || !n)
+  {
+    return -1;
+  }
+
+  if (!*lineptr || *n == 0)
+  {
+    *n = 128;
+    *lineptr = static_cast< char* >(malloc(*n));
+    if (!*lineptr)
+    {
+      return -1;
+    }
+  }
+
+  size_t pos = 0;
+  int c;
+
+  while ((c = getchar()) != EOF)
+  {
+    if (pos + 1 >= *n)
+    {
+      size_t newN = *n * 2;
+      char* newPtr = static_cast< char* >(realloc(*lineptr, newN));
+      if (!newPtr)
+      {
+        return -1;
+      }
+      *lineptr = newPtr;
+      *n = newN;
+    }
+
+    (*lineptr)[pos++] = static_cast< char >(c);
+    if (c == '\n')
+      break;
+  }
+
+  if (!pos && c == EOF)
+  {
+    return -1;
+  }
+
+  (*lineptr)[pos] = '\0';
+  return static_cast< ssize_t >(pos);
 }

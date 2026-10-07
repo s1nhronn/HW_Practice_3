@@ -1,13 +1,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
-#include <sys/wait.h>
+#include <windows.h>
 #include "MessageRAII.hpp"
 
 namespace task
 {
-  ssize_t recv(ssize_t& err, int rd, char* b, ssize_t k);
-  ssize_t recvSize(ssize_t& err, int rd, size_t& len);
+  DWORD recv(DWORD& err, HANDLE rd, char* b, DWORD k);
+  DWORD recvSize(DWORD& err, HANDLE rd, size_t& len);
 }
 
 int main(int argc, char** argv)
@@ -65,22 +65,25 @@ int main(int argc, char** argv)
   }
 }
 
-ssize_t task::recv(ssize_t& err, int rd, char* b, ssize_t k)
+DWORD recv(DWORD& err, HANDLE rd, char* b, DWORD k)
 {
-  ssize_t r = 0;
+  DWORD r = 0;
+  WINBOOL st = true;
+  DWORD h = 0;
   while (r < k)
   {
-    err = read(rd, b + r, static_cast< size_t >(k - r));
-    if (err <= 0)
+    st = ReadFile(rd, b + r, k - r, &h, NULL);
+    if (!st)
     {
+      err = GetLastError();
       break;
     }
-    r += err;
+    r += h;
   }
   return r;
 }
 
-ssize_t task::recvSize(ssize_t& err, int rd, size_t& len)
+DWORD recvSize(DWORD& err, HANDLE rd, size_t& len)
 {
-  return recv(err, rd, reinterpret_cast< char* >(&len), sizeof(size_t));
+  return recv(err, rd, reinterpret_cast< char* >(&len), sizeof(len));
 }
