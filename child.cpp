@@ -8,7 +8,7 @@
 
 namespace task
 {
-  DWORD recv(DWORD& err, HANDLE rd, char* b, DWORD k);
+  DWORD recv(DWORD& err, HANDLE rd, char* b, size_t k);
   DWORD recvSize(DWORD& err, HANDLE rd, size_t& len);
 }
 
@@ -17,29 +17,48 @@ int main(int argc, char** argv)
   if (argc < 2)
   {
     std::cerr << "child: the argument is not specified" << '\n';
+    return 1;
   }
 
   HANDLE rd{reinterpret_cast< HANDLE >(std::stoull(argv[1]))};
-  char msg[256] = {};
-  DWORD err = 0, k = 255;
-  if (task::recv(err, rd, msg, k) != k)
+  DWORD err = 0;
+
+  size_t len = 0;
+  if (task::recvSize(err, rd, len) != sizeof(size_t))
   {
-    std::cerr << err << '\n';
+    std::cerr << "child: " << err << '\n';
     CloseHandle(rd);
     return 1;
   }
+
+  task::MessageRAII msgRAII{};
+  msgRAII.line = static_cast< char* >(malloc((len + 1) * sizeof(char)));
+  if (!msgRAII.line)
+  {
+    perror("child: memory allocation error");
+    return 1;
+  }
+
+  if (task::recv(err, rd, msgRAII.line, len) != len)
+  {
+    std::cerr << "child: " << err << '\n';
+    CloseHandle(rd);
+    return 1;
+  }
+
+  msgRAII.line[len] = '\0';
   CloseHandle(rd);
-  printf("%s", msg);
+  std::cout << msgRAII.line << '\n';
 }
 
-DWORD recv(DWORD& err, HANDLE rd, char* b, DWORD k)
+DWORD task::recv(DWORD& err, HANDLE rd, char* b, size_t k)
 {
   DWORD r = 0;
-  WINBOOL st = true;
+  BOOL st = true;
   DWORD h = 0;
   while (r < k)
   {
-    st = ReadFile(rd, b + r, k - r, &h, NULL);
+    st = ReadFile(rd, b + r, static_cast< DWORD >(k - r), &h, NULL);
     if (!st)
     {
       err = GetLastError();
@@ -50,7 +69,7 @@ DWORD recv(DWORD& err, HANDLE rd, char* b, DWORD k)
   return r;
 }
 
-DWORD recvSize(DWORD& err, HANDLE rd, size_t& len)
+DWORD task::recvSize(DWORD& err, HANDLE rd, size_t& len)
 {
   return recv(err, rd, reinterpret_cast< char* >(&len), sizeof(len));
 }
