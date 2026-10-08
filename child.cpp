@@ -36,6 +36,7 @@ int main(int argc, char** argv)
   if (!msgRAII.line)
   {
     perror("child: memory allocation error");
+    CloseHandle(rd);
     return 1;
   }
 
